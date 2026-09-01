@@ -1,6 +1,6 @@
 # QtEasyTier Daemon
 
-基于 Qt6（Core/Network/Concurrent）的 EasyTier 异地组网后端 daemon 程序，通过本地 Socket 向前端提供 JSON IPC 管理接口。本项目主要用于 QtEasyTier 相关项目的后端守护进程，当在其他非 Qt 项目中使用时，可能会因为引入 Qt 相关动态库而导致程序体积膨胀。
+基于 Boost.Asio/C++ 的 EasyTier 异地组网后端 daemon 程序，通过本地 Socket 向前端提供 JSON IPC 管理接口。本项目主要用于 QtEasyTier 相关项目的后端守护进程。
 
 ## 项目背景
 
@@ -8,7 +8,7 @@
 
 **qtet-daemon** 通过 FFI 调用 EasyTier 的 Rust 核心库（Linux 下为 `libeasytier_ffi.so`，Windows 下为 `easytier_ffi.dll`，macOS 下为 `libeasytier_ffi.dylib`），封装并暴露其管理功能，向上层前端提供 JSON IPC 接口。daemon 本身不实现组网逻辑——它仅仅是 EasyTier Rust 核心的管理代理。
 
-Qt 应用组织名为 `qteasytier`，应用名为 `Daemon`。daemon 会在 `QStandardPaths::AppConfigLocation` 指向的系统应用配置目录下维护 `<socket名称>.json`，用于保存自动回连开关和最近成功启动的实例配置。
+本程序会在程序二进制文件目录下维护 `<socket名称>.json`，用于保存自动回连开关和最近成功启动的实例配置。
 
 **职责边界**：本 daemon 专注于**管理层面**（实例生命周期、状态监控、配置管理、前端接口暴露），**不直接操作数据平面**（TCP/UDP 连接、数据读写）。
 
@@ -17,8 +17,8 @@ Qt 应用组织名为 `qteasytier`，应用名为 `Daemon`。daemon 会在 `QSta
 ### 依赖
 
 - **CMake** 3.19+
-- **Qt6** 6.5+（Core、Network、Concurrent、Test 四个模块）
-- **支持 C++17 的编译器**（Linux/macOS 用 GCC/Clang，Windows 用 MSVC 或 MinGW）
+- **Boost.Asio**（header-only 使用，仅需 Boost 头文件）
+- **支持 C++17 的编译器**（Linux/macOS 用 GCC/Clang，Windows 用 MinGW 或 LLVM-MinGW，暂不支持 MSVC）
 - `libeasytier_ffi` 动态库**无需手动安装**——CMake 配置时自动下载对应平台的预编译包（EasyTier FFI v2.6.4）
 - 可选：Ninja（不安装则使用 CMake 平台默认生成器）
 
@@ -113,27 +113,34 @@ qtet-daemon/
 ├── cmake/
 │   └── download_ffi.cmake             # EasyTier FFI 自动下载与导入
 │
-├── script/
-│   └── build_daemon.sh                # 一键克隆并构建脚本（Linux/macOS）
-│
 ├── src/
 │   ├── main.cpp                       # 应用入口
 │   ├── CMakeLists.txt
+│   ├── base64.h / .cpp                # Base64 编解码辅助
+│   ├── app_paths.h / .cpp             # 可执行文件所在目录定位（与 CWD 无关）
+│   ├── log.h                          # 轻量日志（LOG_INFO/LOG_WARNING/LOG_ERROR）
 │   ├── daemon/
-│   │   ├── Protocol.h / .cpp          # 通信协议层（JSON/Base64 辅助/帧）
-│   │   ├── IpcServer.h / .cpp         # IPC 服务端（QLocalServer）
+│   │   ├── Protocol.h / .cpp          # 通信协议层（JSON 序列化 + 长度前缀帧）
+│   │   ├── IpcServer.h / .cpp         # IPC 服务端（Boost.Asio 本地 Socket 多会话模型）
 │   │   └── ReconnectStore.h / .cpp    # 自动回连配置的 JSON 持久化
 │   ├── ffis/
 │   │   └── FfiDispatcher.h / .cpp     # FFI 调度层（方法→EasyTierFFI）
-│   └── windows-register/              # Windows 服务注册与控制（SCM API）
+│   ├── ipc/                           # 本地 Socket 平台抽象（POSIX/Windows 双实现）
+│   │   ├── LocalSocket.h / .cpp       #   流式本地 Socket（LocalSocketPosix/Windows.cpp）
+│   │   ├── LocalAcceptor.h / .cpp     #   监听接受器 + 单实例探测
+│   │   └── LocalEndpoint.h            #   端点路径推导（Unix socket 路径 / 命名管道名）
+│   └── windows-register/              # Windows 服务注册与控制（SCM API，仅 WIN32 编译）
 │       └── WindowsService.h / .cpp    # --daemon 服务入口 + 服务管理命令
 │
 ├── tests/
 │   ├── CMakeLists.txt
+│   ├── tst_base64.cpp                 # Base64 单元测试
+│   ├── tst_log.cpp                    # 日志单元测试
+│   ├── tst_app_paths.cpp              # 路径定位单元测试
 │   ├── tst_protocol.cpp               # 协议层单元测试
 │   ├── tst_dispatcher.cpp             # 调度层单元测试
 │   ├── tst_reconnect_store.cpp        # 自动回连配置持久化测试
-│   └── tst_integration.cpp            # 端到端集成测试
+│   └── tst_integration.cpp            # 端到端集成测试（仅非 Windows 构建）
 │
 ├── examples/
 │   ├── CMakeLists.txt
@@ -141,8 +148,8 @@ qtet-daemon/
 │       ├── CMakeLists.txt
 │       └── main.cpp                   # 示例 CLI 前端
 │
-└── easytier/                          # EasyTier FFI 头文件（上游依赖，不修改）
-    ├── bin/                           # 空占位目录（构建未引用，动态库在 configure 时下载到 build 目录）
+└── easytier/                          # EasyTier FFI 头文件（上游依赖，不修改；
+                                        # 动态库在 configure 时下载到 build 目录）
     └── include/
         ├── easytier_ffi.h             # C FFI 头文件
         └── EasyTierFFI.h              # C++ 封装头文件
@@ -156,8 +163,8 @@ qtet-daemon/
 
 | 项 | 值 |
 |---|---|
-| 传输方式 | QLocalSocket / QLocalServer（Linux/macOS 为 Unix Domain Socket，Windows 为命名管道） |
-| Socket 名称 | `qtet-daemon.sock`（Linux 下实际路径为 `/tmp/qtet-daemon.sock`，Windows 下为 `\\.\pipe\qtet-daemon.sock`） |
+| 传输方式 | 本地 Socket（Linux/macOS 为 Unix Domain Socket，Windows 为命名管道），端点路径语义与 Qt QLocalSocket/QLocalServer 对齐 |
+| Socket 名称 | `qtet-daemon.sock`（Linux 下实际路径为 `/tmp/qtet-daemon.sock`，若设置了 `TMPDIR` 环境变量则位于其下；Windows 下为 `\\.\pipe\qtet-daemon.sock`） |
 
 前端只需使用标准 QLocalSocket 客户端连接名为 `qtet-daemon.sock` 的 socket 即可。在 Qt 中：
 
@@ -769,7 +776,7 @@ Base64 只用于当前接口中明确标注的字段，主要是 TOML 配置、J
 
 ### 自动回连配置文件
 
-配置文件位于 `QStandardPaths::AppConfigLocation` 对应的目录，文件名为 `<socket名称>.json`。默认 socket 名为 `qtet-daemon.sock` 时，文件名为 `qtet-daemon.sock.json`。
+配置文件位于 daemon 可执行文件所在目录（与运行时工作目录无关），文件名为 `<socket名称>.json`。默认 socket 名为 `qtet-daemon.sock` 时，文件名为 `qtet-daemon.sock.json`。
 
 ```json
 {
@@ -789,10 +796,11 @@ Base64 只用于当前接口中明确标注的字段，主要是 TOML 配置、J
 
 ## 限制与安全
 
-- **仅支持单客户端**：daemon 同一时刻只接受一个客户端连接，第二个连接会被拒绝，客户端断开后自动解锁。
+- **多客户端并行连接**：daemon 支持多个前端客户端同时连接，每个客户端独立成会话（独立帧缓冲与 FFI 调度器），会话之间互不阻塞。
 - **单实例运行**：若 socket 已被其他 daemon 实例监听，新启动的实例会检测到并直接退出（不会移除或覆盖正在运行的实例的 socket）。
-- **请求串行执行**：同一时刻只有一个 FFI 调用在线程池中执行。调用期间到达的帧会累积在接收缓冲区，当前调用完成后按序处理（不会丢弃）。
-- **无鉴权**：daemon 设置了 `QLocalServer::WorldAccessOption`，允许非 root 前端连接 root 运行的 daemon。socket 上没有任何认证或加密，**任何本地用户都可发起请求**，请仅在本机可信环境运行。
+- **会话内请求串行执行**：同一会话同一时刻最多只有一个 FFI 调用在途，调用期间到达的帧累积在接收缓冲区，当前调用完成后按序处理（不会丢弃）；不同会话的 FFI 调用可在线程池中并行执行。
+- **非法帧断连**：零长度或超过单帧上限（16 MiB）的帧视为非法，daemon 会直接断开对应客户端，防止接收缓冲区被恶意撑大。
+- **无鉴权**：本地 socket 对所有本地用户开放（Windows 命名管道授予 Everyone 读写权限，等价于 Qt `QLocalServer::WorldAccessOption` 语义），允许非 root/非管理员前端连接高权限运行的 daemon。socket 上没有任何认证或加密，**任何本地用户都可发起请求**，请仅在本机可信环境运行。
 - **事件为内存队列**：配置服务器推送的事件缓存在进程内队列中，daemon 重启后丢失，需通过 `poll_config_events` 及时轮询取出。
 
 ## CLI 客户端示例
@@ -828,10 +836,3 @@ ctest --test-dir build --output-on-failure
 # 单独运行某个测试
 ctest --test-dir build -R tst_protocol --output-on-failure
 ```
-
-| 测试 | 覆盖内容 |
-|---|---|
-| `tst_protocol` | JSON 序列化/反序列化、Base64 编解码、帧协议分片、畸形输入 |
-| `tst_dispatcher` | 14 个已知方法全路径覆盖、未知方法错误、参数缺失、事件队列 |
-| `tst_reconnect_store` | 自动回连配置 JSON 持久化：开关读写、实例 upsert/删除、读取不改写缓存 |
-| `tst_integration` | QLocalSocket 端到端 IPC、并发客户端、请求 ID 匹配 |
