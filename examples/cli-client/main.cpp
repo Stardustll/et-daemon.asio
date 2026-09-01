@@ -61,13 +61,13 @@ std::string encodeFrameInline(const std::string& payload)
 
 /// 等待响应的共享状态：读循环 + 超时定时器，任一先完成（shared_ptr 保活）
 struct AwaitState : std::enable_shared_from_this<AwaitState> {
-    asio::io_context& io;
-    ipc::LocalSocket& sock;
-    asio::steady_timer timer;
-    std::array<char, 65536> chunk{};
-    std::string buffer;
-    std::promise<std::optional<std::string>> result;
-    bool done = false;
+    asio::io_context& io;                    ///< 事件循环（读回调与定时器在其上触发）
+    ipc::LocalSocket& sock;                  ///< 已连接的 daemon 传输端点
+    asio::steady_timer timer;                ///< 5 秒响应超时定时器
+    std::array<char, 65536> chunk{};         ///< 单次读缓冲（回调触发前须保活）
+    std::string buffer;                      ///< 帧接收累积缓冲（内联解析就地消费）
+    std::promise<std::optional<std::string>> result;  ///< 首帧结果（nullopt = 超时/断连）
+    bool done = false;                       ///< finish 幂等标记（定时器与读竞争完成）
 
     AwaitState(asio::io_context& ioContext, ipc::LocalSocket& socket)
         : io(ioContext)
@@ -76,6 +76,7 @@ struct AwaitState : std::enable_shared_from_this<AwaitState> {
     {
     }
 
+    /// 启动等待：同时挂起超时定时器与第一次异步读
     void start()
     {
         timer.expires_after(std::chrono::milliseconds(5000));
@@ -87,6 +88,7 @@ struct AwaitState : std::enable_shared_from_this<AwaitState> {
         read();
     }
 
+    /// 异步读循环：追加缓冲并尝试内联取帧；首帧到达即 finish，否则续挂读
     void read()
     {
         sock.asyncReadSome(asio::buffer(chunk),
@@ -112,6 +114,7 @@ struct AwaitState : std::enable_shared_from_this<AwaitState> {
                            });
     }
 
+    /// 终结等待（仅一次）：取消定时器、关闭 socket 排空在途操作并向 promise 置值
     void finish(std::optional<std::string> payload)
     {
         if (done)
@@ -125,6 +128,8 @@ struct AwaitState : std::enable_shared_from_this<AwaitState> {
 
 } // namespace
 
+/// 入口：解析参数 → 连接 daemon → 发送单条帧协议请求 → 等待并打印首帧响应。
+/// 退出码：0 成功（含 error 响应，内容原样打印）；1 参数错误/连接失败/无响应
 int main(int argc, char* argv[])
 {
     std::string method;

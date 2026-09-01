@@ -5,9 +5,13 @@
 
 namespace {
 
+/// 编码字母表：下标 0-63 依次对应 A-Z、a-z、0-9、'+'、'/'（RFC 4648 标准字母表）
 const char kEncodeTable[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+/// 单字符解码：字母表字符 → 6 bit 码值
+/// @param ch 待解码字符
+/// @return 0-63 的码值；非字母表字符（含 '=' padding、空白等）返回 -1
 int decodeDigit(char ch)
 {
     if (ch >= 'A' && ch <= 'Z')
@@ -31,6 +35,7 @@ std::string b64encode(std::string_view input)
     out.reserve((input.size() + 2) / 3 * 4);
 
     std::size_t i = 0;
+    // 完整 3 字节组：24 bit 重组后切成 4 个 6 bit 码值查表输出
     while (i + 3 <= input.size()) {
         const unsigned v = (static_cast<unsigned char>(input[i]) << 16)
             | (static_cast<unsigned char>(input[i + 1]) << 8)
@@ -43,6 +48,7 @@ std::string b64encode(std::string_view input)
     }
 
     const std::size_t rem = input.size() - i;
+    // 尾部不足 3 字节：低位补零组出 2/3 个字符，剩余位以 '=' 补满 4 字符组
     if (rem == 1) {
         const unsigned v = static_cast<unsigned char>(input[i]) << 16;
         out += kEncodeTable[(v >> 18) & 0x3F];
@@ -64,6 +70,8 @@ std::string b64decode(std::string_view input)
     std::string out;
     out.reserve(input.size() / 4 * 3);
 
+    // 比特累加器：每消费一个字母表字符累积 6 bit，攒够 8 bit 输出一字节；
+    // 非字母表字符（含 '=' 与空白）直接跳过，实现宽容解码
     unsigned buf = 0;
     int nbits = 0;
     for (char ch : input) {

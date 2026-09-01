@@ -88,6 +88,7 @@ std::vector<std::string> paramStringArray(const nlohmann::json& params, const ch
     return values;
 }
 
+/// 构造失败结果（errorMessage → 响应的 error.message）
 FfiDispatcher::DispatchResult makeError(const std::string& msg)
 {
     FfiDispatcher::DispatchResult r;
@@ -96,6 +97,7 @@ FfiDispatcher::DispatchResult makeError(const std::string& msg)
     return r;
 }
 
+/// 构造成功结果（data → 响应的 result 负载）
 FfiDispatcher::DispatchResult makeSuccess(const nlohmann::json& data = nlohmann::json::object())
 {
     FfiDispatcher::DispatchResult r;
@@ -180,6 +182,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatch(const std::string& method,
 FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& method,
                                                           const nlohmann::json& params)
 {
+    // parse_config：仅校验 TOML 语法合法性（不启动实例）；cfg_str 需 Base64 解码
     if (method == "parse_config") {
         if (!params.contains("cfg_str")) return makeError("missing cfg_str");
         const std::string cfgDecoded = b64decode(paramString(params, "cfg_str"));
@@ -187,6 +190,8 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return ok ? makeSuccess() : makeError(EasyTierFFI::getLastErrorMsg());
     }
 
+    // run_network_instance：启动实例；成功且 TOML 含 instance_name 时写入回连缓存
+    //（缓存的是原始 Base64 cfg_str，回连时直接复用）
     if (method == "run_network_instance") {
         if (!params.contains("cfg_str")) return makeError("missing cfg_str");
         const std::string cfgBase64 = paramString(params, "cfg_str");
@@ -204,6 +209,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return ok ? makeSuccess() : makeError(EasyTierFFI::getLastErrorMsg());
     }
 
+    // delete_network_instance：停止实例并同步移除对应回连缓存（未知名称由 FFI 忽略）
     if (method == "delete_network_instance") {
         const std::vector<std::string> names = paramStringArray(params, "inst_names");
         const bool ok = EasyTierFFI::deleteNetworkInstance(names);
@@ -262,6 +268,8 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return makeSuccess(data);
     }
 
+    // call_json_rpc：转发 EasyTier 内部 RPC——service/method/domain 按原文传输，
+    // payload 解码后送入、response 编码后返回
     if (method == "call_json_rpc") {
         const std::string service = paramString(params, "service_name");
         const std::string rpcMethod = paramString(params, "method_name");
@@ -291,11 +299,13 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return ok ? makeSuccess() : makeError(EasyTierFFI::getLastErrorMsg());
     }
 
+    // stop_config_server_client：断开配置服务器（事件队列中已缓存的事件保留）
     if (method == "stop_config_server_client") {
         const bool ok = EasyTierFFI::stopConfigServerClient();
         return ok ? makeSuccess() : makeError(EasyTierFFI::getLastErrorMsg());
     }
 
+    // is_config_server_client_connected：查询配置服务器连接状态
     if (method == "is_config_server_client_connected") {
         const bool connected = EasyTierFFI::isConfigServerClientConnected();
         nlohmann::json data;
@@ -303,6 +313,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return makeSuccess(data);
     }
 
+    // get_error_msg：返回 FFI 累积的全部错误（逐条 Base64 编码）
     if (method == "get_error_msg") {
         const auto errors = EasyTierFFI::getErrorMsg();
         nlohmann::json arr = nlohmann::json::array();
@@ -313,6 +324,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return makeSuccess(data);
     }
 
+    // get_last_error_msg：仅返回最近一条错误（Base64 编码）
     if (method == "get_last_error_msg") {
         const std::string msg = EasyTierFFI::getLastErrorMsg();
         nlohmann::json data;
@@ -320,6 +332,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return makeSuccess(data);
     }
 
+    // poll_config_events：取走配置服务器事件队列（IPC 层附加方法，事件原文返回）
     if (method == "poll_config_events") {
         const std::vector<std::string> events = pollConfigEvents();
         nlohmann::json arr = nlohmann::json::array();
@@ -330,6 +343,7 @@ FfiDispatcher::DispatchResult FfiDispatcher::dispatchImpl(const std::string& met
         return makeSuccess(data);
     }
 
+    // set_auto_reconnect / get_auto_reconnect：读写回连总开关（直接落盘）
     if (method == "set_auto_reconnect") {
         std::string error;
         const bool enabled = paramBool(params, "enabled", false);

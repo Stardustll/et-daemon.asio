@@ -29,9 +29,14 @@ namespace ipc {
 class LocalAcceptor;
 
 /// 跨平台流式端点
+///
+/// 同一类型覆盖两种角色：服务端经 LocalAcceptor::asyncAccept 交付的已连接
+/// 端点，与客户端经 connect() 直连的端点；此后读写接口无角色差异。
 class LocalSocket
 {
 public:
+    /// 构造未打开的端点；实际平台句柄由 accept 交付或 connect() 建立
+    /// @param io 关联的 io_context（异步读写回调在其上触发）
     explicit LocalSocket(asio::io_context &io);
     /// 关闭并触发写队列残留回调（见 close()），要求无在途异步操作
     ~LocalSocket();
@@ -39,6 +44,7 @@ public:
     LocalSocket(const LocalSocket &) = delete;
     LocalSocket &operator=(const LocalSocket &) = delete;
 
+    /// 端点是否打开（POSIX：socket 已打开；Windows：管道句柄已 assign）
     bool isOpen() const;
 
     /// 关闭端点（幂等）：asio 在线操作由其自行以 operation_aborted 完成；
@@ -46,19 +52,27 @@ public:
     /// 避免回调被静默丢弃（对齐 Qt 销毁语义）
     void close();
 
+    /// 关联的 io_context（供调用方在其上挂超时定时器等辅助异步对象）
     asio::io_context &getIoContext();
 
     /// 异步读：转发平台 socket 的 async_read_some；handler(ec, bytes) 在 io 线程调用
+    /// @param buf 可写缓冲（调用方须保活至回调触发，如 shared_ptr 持有）
+    /// @param handler 完成回调；EOF 以错误码形式送达
     void asyncReadSome(asio::mutable_buffer buf,
                        std::function<void(std::error_code, std::size_t)> handler);
 
     /// 串行写：data 连同 handler 入队，按 FIFO 逐个 async_write；
     /// 每个 handler 恰好触发一次（成功无错 / 传输错误 / 关闭中止），
     /// 传输出错时其后的排队 handler 以同一错误码触发
+    /// @param data 待写数据（按值接管所有权，无需调用方保活）
+    /// @param handler 完成回调（io 线程调用）
     void asyncWrite(std::string data,
                     std::function<void(std::error_code)> handler);
 
-    /// 客户端连接（cli-client 用，同步阻塞）；成功返回 true，失败时 error 填写原因
+    /// 客户端连接（cli-client 用，同步阻塞）；成功返回 true，失败时 error 填写原因。
+    /// POSIX 下带 3 秒有界等待（对端 backlog 耗尽时不无限期卡住）
+    /// @param name socket 名称（经 localEndpointPath 解析为平台端点）
+    /// @param[out] error 失败时填写可读原因
     bool connect(const std::string &name, std::string &error);
 
 private:

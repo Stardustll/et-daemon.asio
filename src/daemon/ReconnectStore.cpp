@@ -51,6 +51,7 @@ bool syncFileToDisk(const std::filesystem::path& file)
 #endif
 }
 
+/// 填写可选错误输出（error 为空指针时丢弃消息，调用侧无需判空）
 void setError(std::string* error, const std::string& message)
 {
     if (error != nullptr) *error = message;
@@ -62,6 +63,7 @@ std::string errnoMessage()
     return std::error_code(errno, std::generic_category()).message();
 }
 
+/// 缺省根对象：autoReconnect 关闭 + 空 instances（文件不存在时的初始状态）
 nlohmann::json defaultRoot()
 {
     return nlohmann::json{

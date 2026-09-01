@@ -33,12 +33,15 @@ std::filesystem::path fallbackDirectory()
 std::filesystem::path exeDirectory()
 {
 #if defined(_WIN32)
+    // Windows：GetModuleFileNameW 直接取完整路径（截断到 MAX_PATH 即视为失败）
     wchar_t buffer[MAX_PATH];
     const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
     if (length == 0 || length >= MAX_PATH)
         return fallbackDirectory();
     return std::filesystem::path(buffer, buffer + length).parent_path();
 #elif defined(__APPLE__)
+    // macOS：_NSGetExecutablePath 两段式取路径（先探长度再取内容），
+    // 再经 realpath 解析符号链接与 ".." 得到规范绝对路径
     uint32_t size = 0;
     if (_NSGetExecutablePath(nullptr, &size) != 0 && size == 0)
         return fallbackDirectory();
@@ -50,6 +53,7 @@ std::filesystem::path exeDirectory()
         return fallbackDirectory();
     return std::filesystem::path(resolved).parent_path();
 #else
+    // Linux：/proc/self/exe 符号链接恒指向当前可执行文件（已是规范路径）
     std::error_code ec;
     const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", ec);
     if (ec || self.empty())
