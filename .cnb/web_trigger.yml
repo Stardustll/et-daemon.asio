@@ -1,0 +1,11 @@
+# 分支详情页自定义按钮：手动触发同步到 GitHub
+# 说明：
+# - 按钮显示在「代码-分支详情页」，未配置 reg 表示所有分支可见
+# - 仅支持 web_trigger 自定义事件，对应流水线在 .cnb.yml 的
+#   web_trigger_sync_github 事件中配置（本文件不支持 imports 语法，
+#   因此凭据导入放在 .cnb.yml 侧）
+branch:
+  - buttons:
+      - name: 同步到 GitHub
+        description: 手动将当前分支与标签同步到 GitHub 仓库
+        event: web_trigger_sync_github

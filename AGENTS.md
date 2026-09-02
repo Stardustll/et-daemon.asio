@@ -50,5 +50,5 @@ third_party/           单头库：nlohmann/json、doctest、toml++——不修�
 - 帧上限 `kMaxFrameSize = 16 MiB`（`Protocol.h`），零长度/超长帧直接断开客户端，不要放宽该上限。
 - `tst_integration` 仅非 Windows 构建（依赖 POSIX unlink/unix socket）；`tst_dispatcher` 运行时需能加载 `libeasytier_ffi.so`（构建时已复制到 `build/Output/` 并设好 RPATH）。
 - daemon 以 root/管理员运行（TUN 操作需要），socket 无鉴权、任何本地用户可连——不要往 IPC 里加需保密的数据。
-- `.cnb.yml`：CNB CI 仅做 push 镜像到 GitHub，无构建/测试流水线；验证靠本地 ctest。
+- `.cnb.yml`：CNB CI 仅做 push 镜像到 GitHub（push 触发 + 分支详情页「同步到 GitHub」手动按钮，按钮定义在 `.cnb/web_trigger.yml`），无构建/测试流水线；验证靠本地 ctest。
 - `build/` 与 `cmake-build-debug/` 均为构建目录，不要提交其中内容。
