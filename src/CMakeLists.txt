@@ -52,7 +52,9 @@ if(WIN32)
     # SCM/安全 API（advapi32）、ShellExecuteExW UAC 提权（shell32）、
     # MessageBoxW（user32）：经 core 的 INTERFACE 传播给 daemon 与测试
     #（LocalSocketWindows.cpp 的 DACL/命名管道同样依赖 advapi32）
-    target_link_libraries(qtet-daemon-core INTERFACE advapi32 shell32 user32)
+    # ws2_32：Boost.Asio 在 Windows 的 winsock_init 静态对象引用 WSAStartup/WSACleanup，
+    # 所有包含 asio 头文件的 TU（daemon、测试、cli-client）都需要它，经 INTERFACE 传播
+    target_link_libraries(qtet-daemon-core INTERFACE advapi32 shell32 user32 ws2_32)
 endif()
 
 # ── 守护进程可执行文件 ──

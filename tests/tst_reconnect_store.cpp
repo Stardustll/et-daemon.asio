@@ -257,7 +257,8 @@ TEST_CASE("保存失败（写入中途失败）后 .tmp 临时文件被清理")
 {
 #ifdef _WIN32
     // /dev/full 注入为 POSIX 专属：Windows 无该设备且 create_symlink 需要特权
-    SUCCEED("/dev/full injection is POSIX-only, skipped on Windows");
+    // 注意：doctest 无 SUCCEED 宏（Catch2 专属），等价用法为 MESSAGE（仅记录不判定）
+    MESSAGE("/dev/full injection is POSIX-only, skipped on Windows");
     return;
 #endif
 
