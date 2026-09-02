@@ -12,5 +12,5 @@
             username: ${GIT_USERNAME}
             password: ${GIT_ACCESS_TOKEN}
             sync_mode: push
-            force: false
-            push_tags: false
+            force: true
+            push_tags: true
