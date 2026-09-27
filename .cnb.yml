@@ -7,7 +7,7 @@
         - name: 同步代码到 GitHub
           image: tencentcom/git-sync
           settings:
-            target_url: https://github.com/qteasytier/qtet-daemon.asio.git
+            target_url: https://github.com/qteasytier/et-daemon.asio.git
             auth_type: https
             username: ${GIT_USERNAME}
             password: ${GIT_ACCESS_TOKEN}
@@ -22,7 +22,7 @@
         - name: 同步代码到 GitHub
           image: tencentcom/git-sync
           settings:
-            target_url: https://github.com/qteasytier/qtet-daemon.asio.git
+            target_url: https://github.com/qteasytier/et-daemon.asio.git
             auth_type: https
             username: ${GIT_USERNAME}
             password: ${GIT_ACCESS_TOKEN}
