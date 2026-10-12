@@ -175,7 +175,13 @@ ReconnectStore::ReconnectStore(const std::string& socketName, std::filesystem::p
 
 std::filesystem::path ReconnectStore::filePath() const
 {
-    return m_baseDir / (m_socketName + ".json");
+    // socket 名可能是绝对路径（macOS 下 /var/run/qtet-daemon.sock）：若整体拼接，
+    // std::filesystem::path::operator/ 遇绝对右操作数会丢弃 m_baseDir，使缓存落到
+    // /var/run 等目录。这里只取文件名段（裸名如 "qtet-daemon.sock" 时 filename()
+    // 与原值相同，行为不变），保证缓存始终位于 m_baseDir 下。
+    const std::filesystem::path name(m_socketName);
+    const std::filesystem::path leaf = name.filename();
+    return m_baseDir / ((leaf.empty() ? name : leaf).string() + ".json");
 }
 
 bool ReconnectStore::autoReconnect(bool* enabled, std::string* error) const

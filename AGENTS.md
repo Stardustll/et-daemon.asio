@@ -15,7 +15,8 @@ ctest --test-dir build -R tst_protocol --output-on-failure
 ```
 
 - 配置时自动从 CNB 下载 EasyTier FFI 预编译包（v2.6.4，逻辑在 `cmake/download_ffi.cmake`），需联网；可 `-DDOWNLOAD_FFI_FROM_CNB=OFF` 切到 GitHub 源。
-- CMake 选项：`-DDAEMON_SOCKET_NAME=...`（默认 `qtet-daemon.sock`，同时影响 Windows 服务名与回连缓存文件名）。
+- CMake 选项：`-DDAEMON_SOCKET_NAME=...`（默认 `qtet-daemon.sock`；macOS 默认 `/var/run/qtet-daemon.sock`，因 root daemon 与普通用户前端 `TMPDIR` 不同。运行时 `--socket` / `QTET_DAEMON_SOCKET` 可覆盖，见 `src/daemon/SocketName.h`。该值同时影响 Windows 服务名与回连缓存文件名）。
+- macOS：默认 Universal（`arm64;x86_64`）+ 最低 13.0；FFI 预编译包按架构分开发布，`cmake/download_ffi.cmake` 在 Universal 构建时下载双架构并 lipo 合成，同时把 install name 修为 `@rpath/libeasytier_ffi.dylib` 并重新 ad-hoc 签名（daemon 侧 RPATH 为 `@loader_path`）。
 - 编译器：GCC/Clang、Windows 用 MinGW/LLVM-MinGW，**不支持 MSVC**。
 
 ## 架构分层

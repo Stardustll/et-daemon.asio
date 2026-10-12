@@ -2,6 +2,16 @@
 # 依赖：Boost（header-only）、C++17、CMake 3.19+
 
 cmake_minimum_required(VERSION 3.19)
+
+# ── macOS：默认构建 Universal（arm64 + x86_64）二进制，最低支持 macOS 13 ──
+# 父工程（QtEasyTier）配置时经 -DCMAKE_OSX_ARCHITECTURES / -DCMAKE_OSX_DEPLOYMENT_TARGET
+# 透传，与 .app 架构保持严格一致；此处仅提供默认值（CACHE 无 FORCE，-D 传入值优先）。
+# 须在 project() 之前设置，令编译器 ABI 探测即按目标架构进行。
+if(APPLE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS 构建架构（默认 Universal）")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "macOS 最低支持版本")
+endif()
+
 project(qtet-daemon-asio VERSION 1.0.0 LANGUAGES CXX)
 set(ET_FFI_VERSION 2.6.4)
 
@@ -10,8 +20,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ── IPC socket 名称（可通过 cmake -DDAEMON_SOCKET_NAME=...  自定义）──
-set(DAEMON_SOCKET_NAME "qtet-daemon.sock" CACHE STRING "守护进程 IPC 本地 socket 名称")
+# ── IPC socket 名称/路径（可通过 cmake -DDAEMON_SOCKET_NAME=... 自定义）──
+# macOS 默认用绝对路径 /var/run/qtet-daemon.sock：root daemon 与普通用户前端的 TMPDIR
+# 不同（/tmp vs /var/folders/…/T），裸名会被 ipc::localEndpointPath 解析成不同文件，
+# 导致前端连不上。运行时可用 --socket 或 QTET_DAEMON_SOCKET 覆盖（见 SocketName.h）。
+if(APPLE)
+    set(ET_DAEMON_SOCKET_NAME_DEFAULT "/var/run/qtet-daemon.sock")
+else()
+    set(ET_DAEMON_SOCKET_NAME_DEFAULT "qtet-daemon.sock")
+endif()
+set(DAEMON_SOCKET_NAME "${ET_DAEMON_SOCKET_NAME_DEFAULT}" CACHE STRING "守护进程 IPC 本地 socket 名称/路径")
 add_compile_definitions(DAEMON_SOCKET_NAME="${DAEMON_SOCKET_NAME}")
 
 # ── EasyTier FFI 下载源（默认从 CNB 下载，关闭后改从 GitHub 下载）──

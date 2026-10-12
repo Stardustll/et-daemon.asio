@@ -2,6 +2,8 @@
 /// @brief qtet-daemon-asio 应用入口
 ///
 /// 默认以前台模式运行并监听本地 IPC socket，处理 SIGINT/SIGTERM 优雅退出。
+/// 监听端点解析优先级：`--socket <path>` > `QTET_DAEMON_SOCKET` 环境变量 >
+/// 编译期平台默认（DAEMON_SOCKET_NAME，macOS 为 /var/run/qtet-daemon.sock）。
 /// Windows 平台额外支持：
 ///   --daemon     以 Windows 服务模式运行（由服务控制管理器启动，手动运行时回退前台）
 ///   --install    注册 Windows 服务（自动 UAC 提权）
@@ -15,10 +17,12 @@
 #include <boost/asio/thread_pool.hpp>
 
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 
 #include "daemon/IpcServer.h"
+#include "daemon/SocketName.h"
 #include "log.h"
 
 #ifdef _WIN32
@@ -33,6 +37,8 @@ std::unique_ptr<asio::io_context> g_io;
 std::unique_ptr<asio::thread_pool> g_pool;
 std::unique_ptr<asio::signal_set> g_signals;
 std::unique_ptr<IpcServer> g_server;
+/// 解析后的监听端点（前台/服务模式共用，由 main 在启动前写入）
+std::string g_socketName;
 
 /// 打印用法（列出全部选项）
 void printUsage(std::FILE* out)
@@ -43,11 +49,14 @@ void printUsage(std::FILE* out)
                  "Options:\n"
                  "  --help       显示本帮助信息\n"
                  "  --version    显示版本信息\n"
-                 "  --daemon     以 Windows 服务模式运行（由服务控制管理器启动）\n"
-                 "  --install    注册 Windows 服务（需要管理员权限）\n"
-                 "  --start      启动已注册的 Windows 服务（需要管理员权限）\n"
-                 "  --stop       停止已注册的 Windows 服务（需要管理员权限）\n"
-                 "  --uninstall  卸载已注册的 Windows 服务（需要管理员权限）\n");
+                 "  --socket <path>  指定 IPC 端点（socket 文件路径或名称；亦可经\n"
+                 "                   环境变量 QTET_DAEMON_SOCKET 提供；默认 qtet-daemon.sock，\n"
+                 "                   macOS 默认 /var/run/qtet-daemon.sock）\n"
+                 "  --daemon     以 Windows 服务模式运行（仅 Windows，由服务控制管理器启动）\n"
+                 "  --install    注册 Windows 服务（仅 Windows，需要管理员权限）\n"
+                 "  --start      启动已注册的 Windows 服务（仅 Windows，需要管理员权限）\n"
+                 "  --stop       停止已注册的 Windows 服务（仅 Windows，需要管理员权限）\n"
+                 "  --uninstall  卸载已注册的 Windows 服务（仅 Windows，需要管理员权限）\n");
 }
 
 /// 创建 io 事件循环/FFI 线程池/IPC 服务并监听；成功返回 true
@@ -70,7 +79,7 @@ bool createDaemonApp()
 
     g_server = std::make_unique<IpcServer>(*g_io, *g_pool);
     std::string error;
-    if (!g_server->listen(DAEMON_SOCKET_NAME, error)) {
+    if (!g_server->listen(g_socketName, error)) {
         LOG_ERROR(error);
         g_server.reset();
         return false;
@@ -115,6 +124,7 @@ int main(int argc, char* argv[])
     bool start = false;
     bool stop = false;
     bool uninstall = false;
+    std::string socketArg; // --socket 显式取值；空串表示未提供
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -146,10 +156,28 @@ int main(int argc, char* argv[])
             uninstall = true;
             continue;
         }
+        if (arg == "--socket") {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "Option --socket requires a value\n");
+                return 1;
+            }
+            socketArg = argv[++i];
+            continue;
+        }
+        if (arg.rfind("--socket=", 0) == 0) {
+            socketArg = arg.substr(std::string("--socket=").size());
+            continue;
+        }
         std::fprintf(stderr, "Unknown option: %s\n", arg.c_str());
         printUsage(stderr);
         return 1;
     }
+
+    // 解析监听端点：--socket > QTET_DAEMON_SOCKET 环境变量 > 平台默认
+    const char* envSocket = std::getenv("QTET_DAEMON_SOCKET");
+    g_socketName = socket_name::resolveSocketName(
+        socketArg, envSocket != nullptr ? std::string(envSocket) : std::string(),
+        DAEMON_SOCKET_NAME);
 
 #ifdef _WIN32
     // 服务管理命令：仅操作服务控制管理器，不初始化 FFI、不监听 socket

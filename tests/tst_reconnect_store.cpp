@@ -78,6 +78,15 @@ TEST_CASE("filePath 为 baseDir/<socketName>.json")
     CHECK(defaultBase.filePath() == app_paths::exeDirectory() / "sock-path.json");
 }
 
+TEST_CASE("filePath 对绝对路径 socket 名只取文件名段，不覆盖 baseDir")
+{
+    TempBaseDir dir;
+    // macOS 下 socket 名为绝对路径 /var/run/qtet-daemon.sock：
+    // 缓存须落在 baseDir 下（<baseDir>/qtet-daemon.sock.json），而非 /var/run
+    ReconnectStore store("/var/run/qtet-daemon.sock", dir.path());
+    CHECK(store.filePath() == dir.path() / "qtet-daemon.sock.json");
+}
+
 TEST_CASE("文件缺失时返回缺省值：autoReconnect 为 false，instances 为空")
 {
     TempBaseDir dir;
@@ -261,6 +270,13 @@ TEST_CASE("保存失败（写入中途失败）后 .tmp 临时文件被清理")
     MESSAGE("/dev/full injection is POSIX-only, skipped on Windows");
     return;
 #endif
+
+    // /dev/full 为 Linux 专属设备：macOS 无此设备，create_symlink 得到悬空链接，
+    // 而 exists() 默认跟随链接 → 前置 REQUIRE 必失败。缺失该设备时跳过。
+    if (!std::filesystem::exists("/dev/full")) {
+        MESSAGE("/dev/full not available on this platform, skipping");
+        return;
+    }
 
     // 注入方式说明：评审建议的“最终路径预置为非空目录 → rename 失败”在本平台
     // 不可行——libstdc++ 的 ifstream 读目录会抛 underflow 异常，saveInstance 在

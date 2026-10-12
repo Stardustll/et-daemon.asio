@@ -39,8 +39,9 @@ cmake --build build -j 8    # -j 参数也可省略
 ```
 
 > **CMake 选项**：
-> - `-DDAEMON_SOCKET_NAME=...`：自定义 IPC socket 名称，默认为 `qtet-daemon.sock`
+> - `-DDAEMON_SOCKET_NAME=...`：自定义 IPC socket 名称/路径，默认 `qtet-daemon.sock`（macOS 默认 `/var/run/qtet-daemon.sock`，见下）
 > - `-DDOWNLOAD_FFI_FROM_CNB=OFF`：切换 FFI 下载源，默认从 CNB 下载，关闭后改从 GitHub Releases 下载
+> - `-DCMAKE_OSX_ARCHITECTURES=...` / `-DCMAKE_OSX_DEPLOYMENT_TARGET=...`：macOS 构建架构（默认 `arm64;x86_64` Universal）与最低系统版本（默认 `13.0`）
 
 生成产物统一输出到 `build/Output/`：
 
@@ -50,7 +51,26 @@ cmake --build build -j 8    # -j 参数也可省略
 | CLI 客户端 | `build/Output/cli-client`（Windows 下为 `cli-client.exe`） |
 | 测试 | `build/Output/tst_*` |
 
-> FFI 动态库会随构建自动复制到 `build/Output/`，daemon 通过 RPATH（构建目录）或 `$ORIGIN`（安装目录）在自身目录下查找，无需手动配置库路径。
+> FFI 动态库会随构建自动复制到 `build/Output/`，daemon 通过 RPATH（构建目录）或 Linux `$ORIGIN` / macOS `@loader_path`（安装目录）在自身目录下查找，无需手动配置库路径。macOS 下官方预编译包的 install name 会被改为 `@rpath/libeasytier_ffi.dylib` 并重新 ad-hoc 签名（见 `cmake/download_ffi.cmake`）。
+
+### macOS
+
+macOS 下 daemon 以 **root** 运行（由 LaunchDaemon 托管，见 QtEasyTier 前端仓库），而前端 `.app` 以**普通用户**运行——二者 `TMPDIR` 不同（root 为 `/tmp`，用户为 `/var/folders/…/T`），故 macOS 默认监听**绝对路径** `/var/run/qtet-daemon.sock`，使两端连接到同一端点。
+
+监听端点运行时可覆盖（优先级从高到低）：
+
+```bash
+qtet-daemon --socket /var/run/qtet-daemon.sock   # 1. 命令行
+QTET_DAEMON_SOCKET=/var/run/qtet-daemon.sock qtet-daemon   # 2. 环境变量
+qtet-daemon                                       # 3. 平台默认
+```
+
+默认构建为 Universal（arm64 + x86_64）；仅本机调试可指定单架构：
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build -j
+```
 
 ### 安装
 
@@ -181,7 +201,7 @@ sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect("/tmp/qtet-daemon.sock")
 ```
 
-> 若 daemon 以自定义 socket 名称构建（`-DDAEMON_SOCKET_NAME=...`），上述路径需同步替换。
+> 若 daemon 以自定义 socket 名称构建（`-DDAEMON_SOCKET_NAME=...`）或运行时以 `--socket` / `QTET_DAEMON_SOCKET` 覆盖，上述路径需同步替换。macOS 默认监听 `/var/run/qtet-daemon.sock`（绝对路径）。
 
 ### 帧协议：长度前缀分帧
 
@@ -776,7 +796,7 @@ Base64 只用于当前接口中明确标注的字段，主要是 TOML 配置、J
 
 ### 自动回连配置文件
 
-配置文件位于 daemon 可执行文件所在目录（与运行时工作目录无关），文件名为 `<socket名称>.json`。默认 socket 名为 `qtet-daemon.sock` 时，文件名为 `qtet-daemon.sock.json`。
+配置文件位于 daemon 可执行文件所在目录（与运行时工作目录无关），文件名为 `<socket名称>.json`。默认 socket 名为 `qtet-daemon.sock` 时，文件名为 `qtet-daemon.sock.json`。socket 名为绝对路径时（macOS 默认 `/var/run/qtet-daemon.sock`）只取文件名段，缓存文件仍为可执行文件目录下的 `qtet-daemon.sock.json`。
 
 ```json
 {

@@ -31,7 +31,8 @@ public:
         std::string cfgBase64;     ///< Base64 编码的完整配置
     };
 
-    /// @param socketName IPC socket 名称，决定缓存文件名（<socketName>.json）
+    /// @param socketName IPC socket 名称，决定缓存文件名（取文件名段：<baseName>.json；
+    ///        绝对路径 socket 名同样只取文件名段，避免 operator/ 覆盖 baseDir）
     /// @param baseDir 缓存文件所在目录；为空 → 可执行文件目录 exeDirectory()，
     ///        测试传临时目录以隔离
     explicit ReconnectStore(const std::string& socketName,

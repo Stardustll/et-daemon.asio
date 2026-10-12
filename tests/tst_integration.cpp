@@ -4,7 +4,7 @@
 /// 测试基建：
 /// - 服务端：IntegrationFixture（doctest 每用例独立实例）——io_context +
 ///   work_guard 跑在专职服务端线程，thread_pool(2) 供 FFI 调度，
-///   IpcServer 以临时目录 storeBaseDir 监听 DAEMON_SOCKET_NAME "-test"
+///   IpcServer 以临时目录 storeBaseDir 监听固定裸 socket 名（见 kSocketName）
 /// - 客户端：TestClient——独立 io_context + 后台读循环线程，缓冲区累积帧，
 ///   awaitFrame 以互斥量 + 条件变量等待（先消费已缓冲的完整帧，再等新数据），
 ///   超时/对端断开返回 nullopt
@@ -39,8 +39,10 @@
 
 namespace {
 
-/// 测试 socket 名（编译期字符串拼接，不与生产 daemon 冲突）
-constexpr const char* kSocketName = DAEMON_SOCKET_NAME "-test";
+/// 测试 socket 名（固定裸名，不使用 DAEMON_SOCKET_NAME 拼接：macOS 下后者为
+/// 绝对路径 /var/run/qtet-daemon.sock，拼接后将试图在 /var/run 中 bind，非 root
+/// 会 EPERM 失败。裸名由 localEndpointPath 解析到临时目录，各平台均可写）
+constexpr const char* kSocketName = "qtet-daemon-integration-test";
 
 /// ───────────────────────── 测试客户端 ─────────────────────────
 /// 独立 io_context + 后台读循环线程：帧到达即入缓冲区并唤醒等待者；

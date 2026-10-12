@@ -75,8 +75,19 @@ add_dependencies(qtet-daemon copy_easytier_ffi_runtime)
 
 # RPATH 设置
 # 构建时：CMake 自动将 easytier_ffi 导入库所在目录加入 RPATH
-# 安装时：$ORIGIN 使二进制在其自身目录下查找 libeasytier_ffi.so
-set_target_properties(qtet-daemon PROPERTIES
-    INSTALL_RPATH "$ORIGIN"
-    BUILD_WITH_INSTALL_RPATH FALSE
-)
+# 安装时：Linux `$ORIGIN` / macOS `@loader_path` 使二进制在其自身目录下查找 FFI 动态库
+#
+# macOS 需 BUILD_WITH_INSTALL_RPATH TRUE：父工程收集的是「构建态」二进制（非 install），
+# 若为 FALSE 则 @loader_path 不会写入 LC_RPATH，daemon 将退回按 dylib 的 install name
+# 去构建机绝对路径找库而失败（download_ffi.cmake 已把 install name 改为 @rpath/<name>）。
+if(APPLE)
+    set_target_properties(qtet-daemon PROPERTIES
+        INSTALL_RPATH "@loader_path"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+else()
+    set_target_properties(qtet-daemon PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
+        BUILD_WITH_INSTALL_RPATH FALSE
+    )
+endif()

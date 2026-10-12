@@ -15,6 +15,11 @@ add_executable(tst_app_paths tst_app_paths.cpp)
 target_link_libraries(tst_app_paths PRIVATE qtet-daemon-core)
 add_test(NAME tst_app_paths COMMAND tst_app_paths)
 
+# SocketName.h 为 header-only，仅需 core 传播的 include 路径
+add_executable(tst_socket_name tst_socket_name.cpp)
+target_link_libraries(tst_socket_name PRIVATE qtet-daemon-core)
+add_test(NAME tst_socket_name COMMAND tst_socket_name)
+
 add_executable(tst_protocol tst_protocol.cpp)
 target_link_libraries(tst_protocol PRIVATE qtet-daemon-core)
 add_test(NAME tst_protocol COMMAND tst_protocol)
